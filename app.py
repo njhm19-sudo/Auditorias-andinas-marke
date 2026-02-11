@@ -39,7 +39,7 @@ if uploaded_file is not None:
 
         for index, row in df_input.iterrows():
             chat_texto = str(row[col_chat])
-            id_val = str(row[col_id]) if col_id != "Ninguna" else f"Fila {int(index)+1"
+            id_val = str(row[col_id]) if col_id != "Ninguna" else f"Fila {int(index)+1}"
             
             try:
                 prompt = f"Analiza este chat de AmoLatina/FunChat. Busca pedidos de regalos, invitaciones a salir o insultos. Responde: RIESGO (Verde/Amarillo/Rojo) y un breve PORQUÉ. Chat: {chat_texto}"
