@@ -2,101 +2,70 @@ import streamlit as st
 import google.generativeai as genai
 import pandas as pd
 from datetime import datetime
+import io
 
-# Configuración de la página
-st.set_page_config(page_title="Auditoría Pro - Chats", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Auditoría Masiva AI", page_icon="🛡️", layout="wide")
 
-# Estilo personalizado
-st.markdown("## 🛡️ Centro de Control: Auditoría de Chats")
-
-# --- CONFIGURACIÓN DE IA ---
+# Configuración IA
 API_KEY = "AIzaSyCPBRlnta-FQgO4ovpIjX-uzWcKLhCc_mU"
 genai.configure(api_key=API_KEY)
 
-# --- INICIALIZAR HISTORIAL ---
-if 'historial_auditoria' not in st.session_state:
-    st.session_state.historial_auditoria = []
+st.title("🛡️ Auditoría Masiva de Chats")
+st.markdown("Sube tu reporte de chats (Excel/CSV) y deja que la IA trabaje por ti.")
 
-# --- FORMULARIO DE ENTRADA ---
-with st.container():
-    col1, col2 = st.columns(2)
-    with col1:
-        id_perfil = st.text_input("🆔 ID del Perfil (Operador)", placeholder="Ej: P-1025")
-        nombre_perfil = st.text_input("👤 Nombre del Perfil", placeholder="Ej: Rebecca")
-    with col2:
-        id_cliente = st.text_input("🆔 ID del Cliente", placeholder="Ej: C-9988")
-        nombre_cliente = st.text_input("👤 Nombre del Cliente", placeholder="Ej: John Doe")
+# --- SECCIÓN DE CARGA ---
+st.subheader("1. Carga de Datos")
+uploaded_file = st.file_uploader("Elige tu archivo de Excel o CSV", type=['csv', 'xlsx'])
 
-    chat_input = st.text_area("💬 Historial del Chat:", height=250)
+if uploaded_file is not None:
+    # Leer el archivo dependiendo del formato
+    if uploaded_file.name.endswith('.csv'):
+        df_input = pd.read_csv(uploaded_file)
+    else:
+        df_input = pd.read_excel(uploaded_file)
+    
+    st.write("Vista previa de los datos cargados:")
+    st.dataframe(df_input.head(5))
 
-# --- LÓGICA DE ANÁLISIS ---
-if st.button("🚀 Analizar y Guardar en Reporte"):
-    if chat_input and id_perfil and id_cliente:
-        with st.spinner('Analizando comportamiento y riesgos...'):
+    col_chat = st.selectbox("Selecciona la columna que tiene el CHAT:", df_input.columns)
+    col_id = st.selectbox("Selecciona la columna del ID (opcional):", ["Ninguna"] + list(df_input.columns))
+
+    if st.button("🚀 Iniciar Auditoría Masiva"):
+        resultados = []
+        progreso = st.progress(0)
+        total = len(df_input)
+        
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
+        for index, row in df_input.iterrows():
+            chat_texto = str(row[col_chat])
+            id_val = str(row[col_id]) if col_id != "Ninguna" else f"Fila {index+1}"
+            
             try:
-                model = genai.GenerativeModel('gemini-1.5-flash-latest')
-                prompt = f"""
-                Analiza este chat de AmoLatina/FunChat.
-                Reglas: No pedir regalos, no dar datos personales, no incitar a salir de la web.
-                
-                Chat: {chat_input}
-                
-                ENTREGA EL RESULTADO EXACTAMENTE ASÍ:
-                RIESGO: [Escribe solo VERDE, AMARILLO o ROJO]
-                RESUMEN: [Un párrafo corto del historial]
-                HALLAZGOS: [Lista de fallas o alertas]
-                """
-                
+                prompt = f"Analiza este chat de AmoLatina/FunChat. Busca pedidos de regalos, invitaciones a salir o insultos. Responde: RIESGO (Verde/Amarillo/Rojo) y un breve PORQUÉ. Chat: {chat_texto}"
                 response = model.generate_content(prompt)
                 analisis = response.text
                 
-                # Extraer el nivel de riesgo para el color
-                nivel_riesgo = "VERDE"
-                if "ROJO" in analisis.upper(): nivel_riesgo = "ROJO"
-                elif "AMARILLO" in analisis.upper(): nivel_riesgo = "AMARILLO"
+                riesgo = "VERDE"
+                if "ROJO" in analisis.upper(): riesgo = "ROJO"
+                elif "AMARILLO" in analisis.upper(): riesgo = "AMARILLO"
 
-                # Guardar en el historial del supervisor
-                nuevo_registro = {
-                    "Fecha/Hora": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "ID Perfil": id_perfil,
-                    "Perfil": nombre_perfil,
-                    "ID Cliente": id_cliente,
-                    "Cliente": nombre_cliente,
-                    "Riesgo": nivel_riesgo,
-                    "Análisis Completo": analisis
-                }
-                st.session_state.historial_auditoria.insert(0, nuevo_registro)
-                st.success("✅ Análisis completado y añadido al reporte.")
-                
-            except Exception as e:
-                st.error(f"Error: {e}")
-    else:
-        st.warning("Bro, rellena los IDs y el chat para poder auditar.")
+                resultados.append({
+                    "ID": id_val,
+                    "Riesgo": riesgo,
+                    "Análisis de la IA": analisis
+                })
+            except:
+                resultados.append({"ID": id_val, "Riesgo": "ERROR", "Análisis de la IA": "Fallo en el proceso"})
+            
+            progreso.progress((index + 1) / total)
 
-# --- SECCIÓN DE REPORTES (PUNTO 1 Y 2) ---
-st.divider()
-st.subheader("📊 Reporte Consolidado (Historial del Turno)")
+        # Mostrar Resultados Finales
+        df_final = pd.DataFrame(resultados)
+        st.divider()
+        st.subheader("📊 Resultados de la Auditoría")
+        st.dataframe(df_final, use_container_width=True)
 
-if st.session_state.historial_auditoria:
-    df = pd.DataFrame(st.session_state.historial_auditoria)
-    
-    # Mostrar tabla resumen
-    st.dataframe(df[["Fecha/Hora", "ID Perfil", "Perfil", "ID Cliente", "Cliente", "Riesgo"]], use_container_width=True)
-
-    # Botón para descargar reporte (Punto 2)
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Descargar Reporte Completo (Excel/CSV)",
-        data=csv,
-        file_name=f"reporte_auditoria_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-        mime='text/csv',
-    )
-    
-    # Detalle expandible
-    with st.expander("Ver detalle de análisis por cada caso"):
-        for reg in st.session_state.historial_auditoria:
-            st.write(f"**Caso: {reg['Perfil']} vs {reg['Cliente']}**")
-            st.code(reg['Análisis Completo'])
-            st.divider()
-else:
-    st.info("Aún no hay análisis en este turno.")
+        # Botón de Descarga
+        csv_result = df_final.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Descargar Reporte Finalizado", csv_result, "auditoria_final.csv", "text/csv")
