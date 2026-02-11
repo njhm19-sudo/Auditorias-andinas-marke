@@ -1,59 +1,102 @@
 import streamlit as st
 import google.generativeai as genai
+import pandas as pd
+from datetime import datetime
 
 # Configuración de la página
-st.set_page_config(page_title="Auditor de Chats AI", page_icon="🛡️")
+st.set_page_config(page_title="Auditoría Pro - Chats", page_icon="🛡️", layout="wide")
 
-st.title("🛡️ Centro de Control: Auditoría de Chats")
-st.markdown("Analiza riesgos de multas y comportamiento de operadores/clientes.")
+# Estilo personalizado
+st.markdown("## 🛡️ Centro de Control: Auditoría de Chats")
 
-# Configurar API Key (La ponemos en un espacio seguro)
+# --- CONFIGURACIÓN DE IA ---
 API_KEY = "AIzaSyCPBRlnta-FQgO4ovpIjX-uzWcKLhCc_mU"
 genai.configure(api_key=API_KEY)
 
-# Sidebar para reglas
-with st.sidebar:
-    st.header("Reglas de Monitoreo")
-    st.info("Buscando: Pedido de regalos, invitaciones externas y frases de riesgo.")
+# --- INICIALIZAR HISTORIAL ---
+if 'historial_auditoria' not in st.session_state:
+    st.session_state.historial_auditoria = []
 
-# Área de entrada de datos
-chat_input = st.text_area("Pega el historial del chat aquí:", height=300)
+# --- FORMULARIO DE ENTRADA ---
+with st.container():
+    col1, col2 = st.columns(2)
+    with col1:
+        id_perfil = st.text_input("🆔 ID del Perfil (Operador)", placeholder="Ej: P-1025")
+        nombre_perfil = st.text_input("👤 Nombre del Perfil", placeholder="Ej: Rebecca")
+    with col2:
+        id_cliente = st.text_input("🆔 ID del Cliente", placeholder="Ej: C-9988")
+        nombre_cliente = st.text_input("👤 Nombre del Cliente", placeholder="Ej: John Doe")
 
-if st.button("Analizar Turno"):
-    if chat_input:
-        with st.spinner('La IA está auditando la conversación...'):
+    chat_input = st.text_area("💬 Historial del Chat:", height=250)
+
+# --- LÓGICA DE ANÁLISIS ---
+if st.button("🚀 Analizar y Guardar en Reporte"):
+    if chat_input and id_perfil and id_cliente:
+        with st.spinner('Analizando comportamiento y riesgos...'):
             try:
                 model = genai.GenerativeModel('gemini-1.5-flash-latest')
                 prompt = f"""
                 Analiza este chat de AmoLatina/FunChat.
                 Reglas: No pedir regalos, no dar datos personales, no incitar a salir de la web.
                 
-                Entrega el resultado con este formato:
-                1. NIVEL DE RIESGO: (Escribe solo: VERDE, AMARILLO o ROJO)
-                2. RESUMEN: Un párrafo corto.
-                3. ALERTAS OPERADOR: Lista de fallas detectadas (ej: pidió regalos).
-                4. ALERTAS CLIENTE: Lista de peligros del cliente.
-                
                 Chat: {chat_input}
+                
+                ENTREGA EL RESULTADO EXACTAMENTE ASÍ:
+                RIESGO: [Escribe solo VERDE, AMARILLO o ROJO]
+                RESUMEN: [Un párrafo corto del historial]
+                HALLAZGOS: [Lista de fallas o alertas]
                 """
+                
                 response = model.generate_content(prompt)
-                res_text = response.text
+                analisis = response.text
+                
+                # Extraer el nivel de riesgo para el color
+                nivel_riesgo = "VERDE"
+                if "ROJO" in analisis.upper(): nivel_riesgo = "ROJO"
+                elif "AMARILLO" in analisis.upper(): nivel_riesgo = "AMARILLO"
 
-                # Mostrar Resultados
-                st.divider()
-                st.subheader("📋 Reporte de Auditoría")
-                
-                # Pintar el semáforo
-                if "ROJO" in res_text:
-                    st.error("🚨 ALERTA ROJA: Riesgo Crítico detectado")
-                elif "AMARILLO" in res_text:
-                    st.warning("⚠️ RIESGO MEDIO: Revisar comportamiento")
-                else:
-                    st.success("✅ SEGURO: Sin infracciones detectadas")
-                
-                st.write(res_text)
+                # Guardar en el historial del supervisor
+                nuevo_registro = {
+                    "Fecha/Hora": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "ID Perfil": id_perfil,
+                    "Perfil": nombre_perfil,
+                    "ID Cliente": id_cliente,
+                    "Cliente": nombre_cliente,
+                    "Riesgo": nivel_riesgo,
+                    "Análisis Completo": analisis
+                }
+                st.session_state.historial_auditoria.insert(0, nuevo_registro)
+                st.success("✅ Análisis completado y añadido al reporte.")
                 
             except Exception as e:
-                st.error(f"Hubo un error: {e}")
+                st.error(f"Error: {e}")
     else:
-        st.warning("Bro, pega un chat primero para poder trabajar.")
+        st.warning("Bro, rellena los IDs y el chat para poder auditar.")
+
+# --- SECCIÓN DE REPORTES (PUNTO 1 Y 2) ---
+st.divider()
+st.subheader("📊 Reporte Consolidado (Historial del Turno)")
+
+if st.session_state.historial_auditoria:
+    df = pd.DataFrame(st.session_state.historial_auditoria)
+    
+    # Mostrar tabla resumen
+    st.dataframe(df[["Fecha/Hora", "ID Perfil", "Perfil", "ID Cliente", "Cliente", "Riesgo"]], use_container_width=True)
+
+    # Botón para descargar reporte (Punto 2)
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Descargar Reporte Completo (Excel/CSV)",
+        data=csv,
+        file_name=f"reporte_auditoria_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        mime='text/csv',
+    )
+    
+    # Detalle expandible
+    with st.expander("Ver detalle de análisis por cada caso"):
+        for reg in st.session_state.historial_auditoria:
+            st.write(f"**Caso: {reg['Perfil']} vs {reg['Cliente']}**")
+            st.code(reg['Análisis Completo'])
+            st.divider()
+else:
+    st.info("Aún no hay análisis en este turno.")
